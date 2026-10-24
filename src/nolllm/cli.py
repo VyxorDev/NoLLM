@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+import argparse
+import sys
+
+from .pipeline import answer_question
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="nolllm",
+        description="Low-resource evidence engine with no large language model.",
+    )
+    parser.add_argument("question", nargs="+", help="Question to research")
+    parser.add_argument("--url", action="append", default=[], help="Extra webpage to include (repeatable)")
+    parser.add_argument("--file", action="append", default=[], help="Local text/HTML file to include (repeatable)")
+    parser.add_argument("--wiki-limit", type=int, default=5, help="Wikipedia pages to retrieve")
+    parser.add_argument("--no-wiki", action="store_true", help="Disable Wikipedia discovery for a fully offline run")
+    parser.add_argument("--show-evidence", action="store_true", help="Show ranked evidence and source URLs")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    question = " ".join(args.question).strip()
+    try:
+        answer = answer_question(
+            question,
+            urls=args.url,
+            files=args.file,
+            wiki_limit=max(1, args.wiki_limit),
+            use_wikipedia=not args.no_wiki,
+        )
+    except Exception as exc:
+        print(f"Research failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(answer.text)
+    print(f"\nConfidence: {answer.confidence:.0%}")
+
+    if args.show_evidence and answer.evidence:
+        print("\nEvidence:")
+        for index, item in enumerate(answer.evidence, 1):
+            print(f"[{index}] {item.sentence}")
+            print(f"    {item.title} — {item.url}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
