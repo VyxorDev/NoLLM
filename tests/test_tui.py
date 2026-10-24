@@ -50,6 +50,39 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(mocked.call_args.kwargs["use_wikipedia"])
                 self.assertFalse(app._busy)
 
+    async def test_greeting_does_not_start_research(self):
+        from nolllm.tui import NoLLMApp
+
+        app = NoLLMApp(web_enabled=False)
+        with patch("nolllm.tui.answer_question") as mocked_research, patch.object(
+            NoLLMApp, "_log", autospec=True
+        ) as mocked_log:
+            async with app.run_test() as pilot:
+                await pilot.click("#prompt")
+                await pilot.press("h", "i", "enter")
+                await pilot.pause(0.1)
+
+            mocked_research.assert_not_called()
+            self.assertTrue(
+                any(
+                    call.args[1] == "NOLLM" and "Hey!" in call.args[2]
+                    for call in mocked_log.call_args_list
+                )
+            )
+
+    async def test_question_about_hi_still_starts_research(self):
+        from nolllm.models import Answer
+        from nolllm.tui import NoLLMApp
+
+        answer = Answer(question="What does hi mean?", text="A sample answer.", evidence=[], confidence=0.2)
+        with patch("nolllm.tui.answer_question", return_value=answer) as mocked_research:
+            app = NoLLMApp(web_enabled=False)
+            async with app.run_test() as pilot:
+                await pilot.click("#prompt")
+                await pilot.press(*list("what does the word hi mean?"), "enter")
+                await pilot.pause(0.2)
+                mocked_research.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
