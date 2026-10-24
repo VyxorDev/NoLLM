@@ -6,7 +6,10 @@ import sys
 from .pipeline import answer_question
 
 
-TUI_INSTALL_HINT = 'The interactive TUI is optional. Install it with: python -m pip install -e ".[tui]"'
+TUI_INSTALL_HINT = (
+    "The interactive TUI is optional. Install Textual into this Python environment with: "
+    "python -m pip install textual"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,7 +43,9 @@ def _launch_tui(args: argparse.Namespace) -> int:
     NoLLMApp(
         initial_urls=args.url,
         initial_files=args.file,
-        web_enabled=not args.no_wiki,
+        web_enabled=True,
+        wiki_enabled=not args.no_wiki,
+        wiki_limit=max(1, args.wiki_limit),
     ).run()
     return 0
 
