@@ -6,22 +6,55 @@ import sys
 from .pipeline import answer_question
 
 
+TUI_INSTALL_HINT = 'The interactive TUI is optional. Install it with: python -m pip install -e ".[tui]"'
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="nolllm",
+        prog="nollm",
         description="Low-resource evidence engine with no large language model.",
     )
-    parser.add_argument("question", nargs="+", help="Question to research")
+    parser.add_argument(
+        "question",
+        nargs="*",
+        help="Question to research; omit it to open the interactive terminal chat",
+    )
+    parser.add_argument("--tui", action="store_true", help="Open the interactive terminal chat")
     parser.add_argument("--url", action="append", default=[], help="Extra webpage to include (repeatable)")
     parser.add_argument("--file", action="append", default=[], help="Local text/HTML file to include (repeatable)")
     parser.add_argument("--wiki-limit", type=int, default=5, help="Wikipedia pages to retrieve")
-    parser.add_argument("--no-wiki", action="store_true", help="Disable Wikipedia discovery for a fully offline run")
+    parser.add_argument("--no-wiki", action="store_true", help="Disable Wikipedia discovery")
     parser.add_argument("--show-evidence", action="store_true", help="Show ranked evidence and source URLs")
     return parser
 
 
+def _launch_tui(args: argparse.Namespace) -> int:
+    try:
+        from .tui import NoLLMApp
+    except ModuleNotFoundError as exc:
+        if exc.name == "textual" or (exc.name or "").startswith("textual."):
+            print(TUI_INSTALL_HINT, file=sys.stderr)
+            return 2
+        raise
+
+    NoLLMApp(
+        initial_urls=args.url,
+        initial_files=args.file,
+        web_enabled=not args.no_wiki,
+    ).run()
+    return 0
+
+
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.tui and args.question:
+        parser.error("Do not combine --tui with a one-shot question; omit the question to open chat.")
+
+    if args.tui or not args.question:
+        return _launch_tui(args)
+
     question = " ".join(args.question).strip()
     try:
         answer = answer_question(
