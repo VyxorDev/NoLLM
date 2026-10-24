@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .intent import respond_to_conversation
 from .pipeline import answer_question
 
 
@@ -61,6 +62,11 @@ def main() -> int:
         return _launch_tui(args)
 
     question = " ".join(args.question).strip()
+    conversational_reply = respond_to_conversation(question)
+    if conversational_reply is not None:
+        print(conversational_reply)
+        return 0
+
     try:
         answer = answer_question(
             question,

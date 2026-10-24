@@ -8,6 +8,7 @@ NoLLM searches available sources, retrieves relevant evidence, ranks it, and com
 
 - zero required third-party dependencies for the core engine
 - zero API keys and no mandatory GPU
+- deterministic routing for common greetings, thanks, and help questions
 - free Wikipedia discovery through MediaWiki
 - direct webpage ingestion with `--url`
 - local text/HTML ingestion with `--file`
@@ -54,6 +55,8 @@ You can also explicitly launch the TUI:
 nollm --tui
 ```
 
+Common greetings such as `Hi`, `hello`, and `how are you` receive a short local reply rather than triggering web research. Real questions such as `What does the word hi mean?` still go through the research pipeline.
+
 Ask a one-shot question:
 
 ```powershell
@@ -88,7 +91,7 @@ Inside the interactive terminal chat:
 - `Ctrl+L` — clear the conversation
 - `Ctrl+Q` — quit
 
-The transcript is bounded to 800 lines to keep memory usage predictable. Each answer shows its evidence-sufficiency estimate and source URLs.
+The transcript is bounded to 800 lines to keep memory usage predictable. Each research answer shows its evidence-sufficiency estimate and source URLs.
 
 ## Run without installing the CLI entry point
 
@@ -100,7 +103,12 @@ python -m nolllm "What is BM25?" --show-evidence
 ## Architecture
 
 ```text
-question
+input
+   |
+   v
+deterministic conversational intent router
+   | (only exact known small-talk phrases)
+   +----> local canned reply
    |
    v
 free discovery / supplied URLs / local files

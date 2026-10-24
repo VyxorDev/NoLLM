@@ -7,6 +7,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Footer, Input, RichLog, Static
 
+from .intent import respond_to_conversation
 from .models import Answer
 from .pipeline import answer_question
 
@@ -115,7 +116,7 @@ class NoLLMApp(App[None]):
             ),
             Vertical(
                 Input(
-                    placeholder="Ask a question…  (type /help for commands)",
+                    placeholder="Say hi or ask a research question…  (type /help for commands)",
                     id="prompt",
                 ),
                 Static(
@@ -132,10 +133,10 @@ class NoLLMApp(App[None]):
     def on_mount(self) -> None:
         self._log(
             "SYSTEM",
-            "Welcome to NoLLM. Answers are assembled from retrieved evidence; "
-            "no large language model is used.",
+            "Welcome to NoLLM. I can handle simple greetings and help locally, "
+            "or research questions using retrieved evidence—without a large language model.",
         )
-        self._log("SYSTEM", "Type /help to see commands. Ask a factual question to begin.")
+        self._log("SYSTEM", "Type /help to see commands. Say hi or ask a factual question to begin.")
         if self.local_files:
             self._log("SYSTEM", f"Loaded {len(self.local_files)} local file(s) into the research context.")
         self.query_one("#prompt", Input).focus()
@@ -156,6 +157,13 @@ class NoLLMApp(App[None]):
             return
 
         self._log("YOU", prompt)
+
+        conversational_reply = respond_to_conversation(prompt)
+        if conversational_reply is not None:
+            self._log("NOLLM", conversational_reply)
+            event.input.focus()
+            return
+
         self._busy = True
         event.input.disabled = True
         self.query_one("#status", Static).update("RESEARCHING  ·  RETRIEVING SOURCES  ·  PLEASE WAIT")
