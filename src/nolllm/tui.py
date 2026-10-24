@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Footer, Input, RichLog, Static
 
+from .models import Answer
 from .pipeline import answer_question
 
 
@@ -84,6 +85,8 @@ class NoLLMApp(App[None]):
         initial_urls: list[str] | None = None,
         initial_files: list[str] | None = None,
         web_enabled: bool = True,
+        wiki_enabled: bool = True,
+        wiki_limit: int = 5,
     ) -> None:
         super().__init__()
         self.initial_urls = list(initial_urls or [])
@@ -93,7 +96,9 @@ class NoLLMApp(App[None]):
             if path.is_file():
                 self.local_files.append(str(path.resolve()))
         self.web_enabled = web_enabled
-        self.last_answer = None
+        self.wiki_enabled = wiki_enabled
+        self.wiki_limit = max(1, wiki_limit)
+        self.last_answer: Answer | None = None
         self._busy = False
 
     def compose(self) -> ComposeResult:
@@ -135,7 +140,7 @@ class NoLLMApp(App[None]):
             self._log("SYSTEM", f"Loaded {len(self.local_files)} local file(s) into the research context.")
         self.query_one("#prompt", Input).focus()
 
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         prompt = event.value.strip()
         event.input.value = ""
         if not prompt:
@@ -154,36 +159,51 @@ class NoLLMApp(App[None]):
         self._busy = True
         event.input.disabled = True
         self.query_one("#status", Static).update("RESEARCHING  ·  RETRIEVING SOURCES  ·  PLEASE WAIT")
+        self._research(prompt)
 
+    @work(thread=True, exclusive=True, group="research")
+    def _research(self, prompt: str) -> None:
+        """Run potentially slow network and retrieval work outside the UI thread."""
         try:
-            answer = await asyncio.to_thread(
-                answer_question,
+            answer = answer_question(
                 prompt,
                 urls=self.initial_urls if self.web_enabled else [],
                 files=self.local_files,
-                use_wikipedia=self.web_enabled,
+                wiki_limit=self.wiki_limit,
+                use_wikipedia=self.web_enabled and self.wiki_enabled,
             )
-            self.last_answer = answer
-            self._log("NOLLM", answer.text)
-            self._log(
-                "EVIDENCE SUFFICIENCY",
-                f"{answer.confidence:.0%}  (retrieval sufficiency, not probability of truth)",
-            )
-            if answer.evidence:
-                source_lines = [
-                    f"[{index}] {item.title}\n    {item.url}"
-                    for index, item in enumerate(answer.evidence, 1)
-                ]
-                self._log("SOURCES", "\n".join(source_lines))
-            else:
-                self._log("SOURCES", "No sufficiently relevant evidence was found.")
         except Exception as exc:
-            self._log("ERROR", f"Research failed: {exc}")
-        finally:
-            self._busy = False
-            event.input.disabled = False
-            self.query_one("#status", Static).update(self._status_text())
-            event.input.focus()
+            self.call_from_thread(self._finish_error, str(exc))
+            return
+        self.call_from_thread(self._finish_answer, answer)
+
+    def _finish_answer(self, answer: Answer) -> None:
+        self.last_answer = answer
+        self._log("NOLLM", answer.text)
+        self._log(
+            "EVIDENCE SUFFICIENCY",
+            f"{answer.confidence:.0%}  (retrieval sufficiency, not probability of truth)",
+        )
+        if answer.evidence:
+            source_lines = [
+                f"[{index}] {item.title}\n    {item.url}"
+                for index, item in enumerate(answer.evidence, 1)
+            ]
+            self._log("SOURCES", "\n".join(source_lines))
+        else:
+            self._log("SOURCES", "No sufficiently relevant evidence was found.")
+        self._finish_request()
+
+    def _finish_error(self, message: str) -> None:
+        self._log("ERROR", f"Research failed: {message}")
+        self._finish_request()
+
+    def _finish_request(self) -> None:
+        self._busy = False
+        prompt = self.query_one("#prompt", Input)
+        prompt.disabled = False
+        self.query_one("#status", Static).update(self._status_text())
+        prompt.focus()
 
     def _handle_command(self, raw: str) -> None:
         command, _, argument = raw.partition(" ")
@@ -196,8 +216,8 @@ class NoLLMApp(App[None]):
                 "/load <path>  Load a local text/code/Markdown/HTML file (quote paths with spaces).\n"
                 "/files        List loaded local files.\n"
                 "/sources      Show sources from the previous answer.\n"
-                "/offline      Disable web research; use loaded files only.\n"
-                "/online       Enable web research.\n"
+                "/offline      Disable all web access; use loaded files only.\n"
+                "/online       Re-enable web access.\n"
                 "/clear        Clear the visible conversation.\n"
                 "/help         Show this help.\n"
                 "Ctrl+L        Clear the visible conversation.\n"
@@ -257,9 +277,10 @@ class NoLLMApp(App[None]):
         self._log("SYSTEM", f"Loaded local file: {resolved}")
 
     def _status_text(self) -> str:
-        mode = "WEB RESEARCH ON" if self.web_enabled else "OFFLINE MODE"
+        mode = "ONLINE" if self.web_enabled else "OFFLINE"
+        wiki = "WIKIPEDIA ON" if self.web_enabled and self.wiki_enabled else "WIKIPEDIA OFF"
         return (
-            f"{mode}  ·  {len(self.local_files)} LOCAL FILE(S)  ·  "
+            f"{mode}  ·  {wiki}  ·  {len(self.local_files)} LOCAL FILE(S)  ·  "
             "NO LLM  ·  CPU-FIRST"
         )
 
