@@ -19,6 +19,7 @@ class Evidence:
     score: float
     source: str = "web"
     matched_terms: tuple[str, ...] = field(default_factory=tuple)
+    query_coverage: float = 0.0
 
 
 @dataclass(slots=True)

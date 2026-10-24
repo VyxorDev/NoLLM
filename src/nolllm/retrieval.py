@@ -18,10 +18,14 @@ class _SentenceDoc:
 
 
 def retrieve(question: str, documents: list[Document], limit: int = 8) -> list[Evidence]:
-    """Rank sentences with a compact BM25 implementation."""
-    query_terms = tokenize(question)
-    if not query_terms:
+    """Rank sentences with BM25, rejecting weak lexical matches."""
+    query_terms = list(dict.fromkeys(tokenize(question)))
+    if not query_terms or limit <= 0:
         return []
+
+    query_set = set(query_terms)
+    minimum_matches = _minimum_match_count(len(query_set))
+    minimum_coverage = _minimum_coverage(len(query_set))
 
     corpus: list[_SentenceDoc] = []
     for document in documents:
@@ -45,47 +49,89 @@ def retrieve(question: str, documents: list[Document], limit: int = 8) -> list[E
 
     for item in corpus:
         frequencies = Counter(item.terms)
+        matched = query_set.intersection(frequencies)
+        coverage = len(matched) / len(query_set)
+
+        # A one- or two-concept question must match every concept. Longer
+        # questions may omit some wording, but still need multiple anchors.
+        if len(matched) < minimum_matches or coverage < minimum_coverage:
+            continue
+
         score = 0.0
-        matched: list[str] = []
         for term in query_terms:
             tf = frequencies[term]
             if not tf:
                 continue
-            matched.append(term)
             df = document_frequency[term]
             idf = math.log(1 + (n - df + 0.5) / (df + 0.5))
             denominator = tf + k1 * (1 - b + b * len(item.terms) / max(avg_len, 1))
             score += idf * ((tf * (k1 + 1)) / denominator)
 
-        if score > 0:
-            # Prefer sentences that cover several distinct query concepts.
-            coverage = len(set(matched)) / max(len(set(query_terms)), 1)
-            score *= 1.0 + 0.35 * coverage
-            ranked.append(
-                Evidence(
-                    sentence=item.sentence,
-                    title=item.title,
-                    url=item.url,
-                    source=item.source,
-                    score=score,
-                    matched_terms=tuple(sorted(set(matched))),
-                )
-            )
+        if score <= 0:
+            continue
 
-    ranked.sort(key=lambda e: e.score, reverse=True)
+        # Reward broad query coverage modestly; exact short phrases receive
+        # a small bonus, but neither can rescue a sentence that failed filtering.
+        score *= 0.75 + 0.25 * coverage
+        if _contains_phrase(query_terms, item.terms):
+            score *= 1.2
+
+        ranked.append(
+            Evidence(
+                sentence=item.sentence,
+                title=item.title,
+                url=item.url,
+                source=item.source,
+                score=score,
+                matched_terms=tuple(sorted(matched)),
+                query_coverage=coverage,
+            )
+        )
+
+    ranked.sort(key=lambda evidence: evidence.score, reverse=True)
     return _deduplicate(ranked, limit)
+
+
+def _minimum_match_count(term_count: int) -> int:
+    if term_count <= 2:
+        return term_count
+    if term_count <= 4:
+        return 2
+    if term_count <= 8:
+        return 3
+    return 4
+
+
+def _minimum_coverage(term_count: int) -> float:
+    if term_count <= 2:
+        return 1.0
+    if term_count <= 4:
+        return 0.5
+    if term_count <= 8:
+        return 0.35
+    return 0.25
+
+
+def _contains_phrase(query_terms: list[str], sentence_terms: list[str]) -> bool:
+    if len(query_terms) < 2 or len(query_terms) > 5:
+        return False
+    width = len(query_terms)
+    return any(
+        sentence_terms[index:index + width] == query_terms
+        for index in range(len(sentence_terms) - width + 1)
+    )
 
 
 def _deduplicate(items: list[Evidence], limit: int) -> list[Evidence]:
     selected: list[Evidence] = []
-    seen: set[frozenset[str]] = set()
+    seen: list[frozenset[str]] = []
     for item in items:
         signature = frozenset(tokenize(item.sentence))
         if not signature:
             continue
         if any(_jaccard(signature, old) > 0.82 for old in seen):
             continue
-        seen.add(signature)
+        seen.append(signature)
         selected.append(item)
         if len(selected) >= limit:
             break

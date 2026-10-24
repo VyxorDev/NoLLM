@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
+from urllib.parse import urlsplit
 
 from .models import Evidence
 
@@ -12,24 +14,33 @@ SOURCE_WEIGHT = {
 }
 
 
+def source_identity(item: Evidence) -> str:
+    """Return a conservative publisher identity for source-diversity checks."""
+    parsed = urlsplit(item.url)
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    if host:
+        return host
+    # Local paths and non-HTTP sources should remain distinct by location.
+    normalized_url = item.url.strip().replace(chr(92), "/").casefold()
+    return f"{item.source}:{normalized_url}"
+
+
 def rescore(evidence: list[Evidence]) -> list[Evidence]:
-    """Apply cheap source diversity and corroboration bonuses."""
+    """Apply source weighting and reduce the influence of one prolific source.
+
+    Repeated matching terms are not treated as corroboration: true corroboration
+    requires claim-level agreement, which this version does not yet establish.
+    """
     if not evidence:
         return []
 
-    term_sources: dict[str, set[str]] = {}
-    for item in evidence:
-        for term in item.matched_terms:
-            term_sources.setdefault(term, set()).add(item.url)
-
+    source_counts = Counter(source_identity(item) for item in evidence)
     rescored: list[Evidence] = []
-    source_counts = Counter(item.url for item in evidence)
-    for item in evidence:
-        corroboration = sum(max(0, len(term_sources[t]) - 1) for t in item.matched_terms)
-        diversity_penalty = 1 / (1 + 0.08 * max(0, source_counts[item.url] - 1))
-        item.score *= SOURCE_WEIGHT.get(item.source, 0.8)
-        item.score *= 1 + min(corroboration, 6) * 0.025
-        item.score *= diversity_penalty
-        rescored.append(item)
 
-    return sorted(rescored, key=lambda e: e.score, reverse=True)
+    for item in evidence:
+        identity = source_identity(item)
+        source_penalty = 1 / (1 + 0.12 * max(0, source_counts[identity] - 1))
+        weight = SOURCE_WEIGHT.get(item.source, 0.8)
+        rescored.append(replace(item, score=item.score * weight * source_penalty))
+
+    return sorted(rescored, key=lambda item: item.score, reverse=True)
