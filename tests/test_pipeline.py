@@ -20,7 +20,24 @@ class PipelineTests(unittest.TestCase):
                 use_wikipedia=False,
             )
             self.assertGreater(answer.confidence, 0)
+            self.assertLessEqual(answer.confidence, 0.75)
             self.assertIn("ranking function", answer.text)
+
+    def test_unrelated_file_does_not_produce_confident_answer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "notes.txt"
+            path.write_text(
+                "Bananas are common fruit grown in tropical climates around the world.",
+                encoding="utf-8",
+            )
+            answer = answer_question(
+                "What is a knowledge graph?",
+                files=[str(path)],
+                use_wikipedia=False,
+            )
+            self.assertEqual(answer.confidence, 0.0)
+            self.assertFalse(answer.evidence)
+            self.assertIn("could not find enough relevant evidence", answer.text)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ def main() -> int:
         return 1
 
     print(answer.text)
-    print(f"\nConfidence: {answer.confidence:.0%}")
+    print(f"\nEvidence sufficiency (not truth probability): {answer.confidence:.0%}")
 
     if args.show_evidence and answer.evidence:
         print("\nEvidence:")
