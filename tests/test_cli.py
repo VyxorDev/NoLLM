@@ -1,6 +1,10 @@
+import io
+import sys
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
-from nolllm.cli import build_parser
+from nolllm.cli import build_parser, main
 
 
 class CLITests(unittest.TestCase):
@@ -18,6 +22,16 @@ class CLITests(unittest.TestCase):
         args = build_parser().parse_args(["--tui"])
         self.assertTrue(args.tui)
         self.assertEqual(args.question, [])
+
+    def test_one_shot_greeting_skips_research(self):
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["nollm", "Hi"]), patch(
+            "nolllm.cli.answer_question"
+        ) as mocked_research, redirect_stdout(output):
+            self.assertEqual(main(), 0)
+
+        mocked_research.assert_not_called()
+        self.assertIn("Hey!", output.getvalue())
 
 
 if __name__ == "__main__":
