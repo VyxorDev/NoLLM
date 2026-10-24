@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 try:
     import textual  # noqa: F401
@@ -14,7 +15,7 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
         from nolllm.tui import NoLLMApp
 
         app = NoLLMApp(web_enabled=False)
-        async with app.run_test() as pilot:
+        async with app.run_test():
             self.assertIsNotNone(app.query_one("#prompt", Input))
             self.assertIsNotNone(app.query_one("#transcript", RichLog))
             self.assertFalse(app.web_enabled)
@@ -27,6 +28,27 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
             await pilot.click("#prompt")
             await pilot.press(*list("/offline"), "enter")
             self.assertFalse(app.web_enabled)
+
+    async def test_wiki_limit_and_direct_urls_are_preserved(self):
+        from nolllm.models import Answer
+        from nolllm.tui import NoLLMApp
+
+        answer = Answer(question="sample", text="sample answer", evidence=[], confidence=0.5)
+        with patch("nolllm.tui.answer_question", return_value=answer) as mocked:
+            app = NoLLMApp(
+                initial_urls=["https://example.test/page"],
+                wiki_enabled=False,
+                wiki_limit=2,
+            )
+            async with app.run_test() as pilot:
+                await pilot.click("#prompt")
+                await pilot.press(*list("sample question"), "enter")
+                await pilot.pause(0.2)
+                mocked.assert_called_once()
+                self.assertEqual(mocked.call_args.kwargs["urls"], ["https://example.test/page"])
+                self.assertEqual(mocked.call_args.kwargs["wiki_limit"], 2)
+                self.assertFalse(mocked.call_args.kwargs["use_wikipedia"])
+                self.assertFalse(app._busy)
 
 
 if __name__ == "__main__":
