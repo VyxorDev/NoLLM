@@ -1,32 +1,30 @@
-# NoLLM AI
+# NoLLM
 
 A local-first, low-resource AI research engine built **without large language models**.
 
-The long-term goal is to push retrieval, symbolic reasoning, program synthesis, verification, planning, and classical NLP as far as possible while keeping GPU use optional and hardware requirements low.
+NoLLM searches available sources, retrieves relevant evidence, ranks it, and composes a deterministic answer. It is designed to run on CPU-only and low-resource computers.
 
-## V0.1: first working core
+## Current capabilities
 
-This first version already has:
-
-- zero required third-party Python dependencies
-- zero API keys
-- zero GPU requirement
+- zero required third-party dependencies for the core engine
+- zero API keys and no mandatory GPU
 - free Wikipedia discovery through MediaWiki
 - direct webpage ingestion with `--url`
-- fully offline local text/HTML ingestion with `--file --no-wiki`
+- local text/HTML ingestion with `--file`
+- fully offline one-shot research with `--file --no-wiki`
 - HTML-to-text extraction
-- a small BM25 sentence retriever implemented from scratch
-- duplicate suppression
-- lightweight evidence rescoring
-- deterministic answer composition
-- source/evidence display
+- BM25 sentence retrieval with weak-match filtering
+- duplicate suppression and publisher diversity
+- conservative evidence-sufficiency scoring (not a truth probability)
+- deterministic answer composition with source citations
 - standard-library unit tests
-
-It is intentionally small. We should earn complexity only when a cheaper algorithm cannot do the job.
+- optional interactive terminal chat UI
 
 ## Install
 
 Requires Python 3.10+.
+
+Create an environment and install the core:
 
 ```powershell
 python -m venv .venv
@@ -34,28 +32,68 @@ python -m venv .venv
 python -m pip install -e .
 ```
 
-## Run
+To enable the interactive terminal UI, install the optional extra:
 
 ```powershell
-nolllm "What is a knowledge graph?" --show-evidence
+python -m pip install -e ".[tui]"
+```
+
+The core remains dependency-free; the TUI uses Textual and does not require a GPU or AI model.
+
+## Run
+
+Launch the interactive terminal chat (requires the optional `tui` extra):
+
+```powershell
+nollm
+```
+
+You can also explicitly launch the TUI:
+
+```powershell
+nollm --tui
+```
+
+Ask a one-shot question:
+
+```powershell
+nollm "What is a knowledge graph?" --show-evidence
 ```
 
 Include arbitrary webpages:
 
 ```powershell
-nolllm "What changed in this project?" --url https://example.com/page --show-evidence
+nollm "What changed in this project?" --url https://example.com/page --show-evidence
 ```
 
-Fully offline:
+Run a fully offline query against a local file:
 
 ```powershell
-nolllm "What does this document say about BM25?" --file .\notes.txt --no-wiki --show-evidence
+nollm "What does this document say about BM25?" --file .\notes.txt --no-wiki --show-evidence
 ```
 
-Or without installing the CLI entry point:
+If the TUI extra is not installed, one-shot commands still work. Running `nollm` without a question prints the exact install command needed to enable chat.
+
+## TUI commands
+
+Inside the interactive terminal chat:
+
+- `/help` — show commands
+- `/load <path>` — add a local text, code, Markdown, or HTML file to the research context (quote paths containing spaces)
+- `/files` — list loaded local files
+- `/sources` — show the evidence sources for the previous answer
+- `/offline` — disable web discovery and use loaded local files only
+- `/online` — enable web discovery
+- `/clear` — clear the visible conversation
+- `Ctrl+L` — clear the conversation
+- `Ctrl+Q` — quit
+
+The transcript is bounded to 800 lines to keep memory usage predictable. Each answer shows its evidence-sufficiency estimate and source URLs.
+
+## Run without installing the CLI entry point
 
 ```powershell
-$env:PYTHONPATH="src"
+$env:PYTHONPATH = "src"
 python -m nolllm "What is BM25?" --show-evidence
 ```
 
@@ -65,7 +103,7 @@ python -m nolllm "What is BM25?" --show-evidence
 question
    |
    v
-free discovery / supplied URLs
+free discovery / supplied URLs / local files
    |
    v
 text extraction
@@ -74,10 +112,10 @@ text extraction
 sentence segmentation
    |
    v
-BM25 retrieval
+BM25 retrieval + weak-match filtering
    |
    v
-evidence rescoring + deduplication
+source diversity + evidence sufficiency
    |
    v
 deterministic answer composer
@@ -90,59 +128,55 @@ deterministic answer composer
 3. Low-end hardware must remain supported.
 4. Prefer deterministic algorithms before neural models.
 5. Heavy features must be optional/lazy-loaded.
-6. Every factual answer should remain traceable to evidence.
+6. Factual answers should remain traceable to evidence.
 7. No paid service may become mandatory.
 
 ## Roadmap
 
-### V0.2 — real web discovery
+### V0.3 — claim verification
+- claim extraction and normalization
+- agreement/contradiction detection
+- dates and numeric facts
+- provenance graph
+- confidence calibration against test cases
+
+### V0.4 — broader web discovery
 - pluggable search-provider interface
-- SearXNG provider
+- optional SearXNG provider
 - documentation-site search adapters
 - robots.txt-aware fetching
 - cache with disk-size limits
 
-### V0.3 — stronger evidence engine
-- claim extraction
-- agreement/contradiction detection
-- dates and numeric facts
-- source independence detection
-- provenance graph
-- confidence calibration
-
-### V0.4 — local memory
+### V0.5 — local memory
 - SQLite knowledge store
 - entity/relationship graph
 - source reliability history
 - incremental cache/index
 
-### V0.5 — specialist reasoning
+### V0.6 — specialist reasoning
 - math via SymPy
 - constraints/logic via Z3
 - graph algorithms
 - rule engine
 - task routing
 
-### V0.6 — coding engine
-- Tree-sitter/AST parsing
+### V0.7 — coding engine
+- AST parsing
 - template and grammar-based synthesis
 - documentation retrieval
 - compiler/test execution
 - repair loop
 
-### Later
-- lightweight dialogue manager
-- planning/search algorithms
-- combinatorial creativity engine
-- optional tiny classifiers/embedders where they clearly beat classical methods
-- automatic hardware profile: tiny / normal / max
-
 ## Tests
 
+Core test suite:
+
 ```powershell
-$env:PYTHONPATH="src"
+$env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
+
+The CI workflow also installs the optional TUI extra and runs the UI smoke tests.
 
 ## License
 
